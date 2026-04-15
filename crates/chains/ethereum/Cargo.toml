@@ -1,0 +1,33 @@
+[package]
+name = "chain-ethereum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ethereum/EVM chain support for Canton 2PC-MPC (ECDSA secp256k1)"
+
+[dependencies]
+crypto-core = { path = "../../crypto-core" }
+mpc-protocol = { path = "../../mpc-protocol" }
+
+# Ethereum-specific
+alloy-primitives = "0.7"
+alloy-rlp = "0.3"
+alloy-signer = "0.1"
+
+# Hashing (Keccak256)
+sha3.workspace = true
+
+# Serialization
+serde.workspace = true
+hex.workspace = true
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

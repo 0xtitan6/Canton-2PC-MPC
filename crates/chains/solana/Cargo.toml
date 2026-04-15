@@ -1,0 +1,33 @@
+[package]
+name = "chain-solana"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Solana chain support for Canton 2PC-MPC (EdDSA Ed25519)"
+
+[dependencies]
+crypto-core = { path = "../../crypto-core" }
+mpc-protocol = { path = "../../mpc-protocol" }
+
+# Solana-specific
+solana-sdk = "2.0"
+
+# Ed25519
+ed25519-dalek.workspace = true
+
+# Serialization
+serde.workspace = true
+hex.workspace = true
+bs58.workspace = true
+bincode.workspace = true
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

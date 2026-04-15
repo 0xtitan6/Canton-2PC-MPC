@@ -1,0 +1,38 @@
+[package]
+name = "canton-integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Canton Network and Daml integration layer for 2PC-MPC"
+
+[dependencies]
+crypto-core = { path = "../crypto-core" }
+mpc-protocol = { path = "../mpc-protocol" }
+dwallet = { path = "../dwallet" }
+chain-bitcoin = { path = "../chains/bitcoin" }
+chain-ethereum = { path = "../chains/ethereum" }
+chain-solana = { path = "../chains/solana" }
+
+# gRPC for Canton Ledger API
+tonic.workspace = true
+prost.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+tonic-build = "0.11"
