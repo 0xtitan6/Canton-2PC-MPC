@@ -2,7 +2,6 @@
 
 use crate::address::Pubkey;
 use crate::transaction::{AccountMeta, Instruction};
-use crate::{SolanaError, Result};
 
 /// SPL Token instruction discriminators
 pub mod instruction_type {

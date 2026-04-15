@@ -14,18 +14,14 @@ chain-solana = { path = "../chains/solana" }
 
 # Serialization
 serde.workspace = true
-serde_json.workspace = true
+hex = "0.4"
+bs58.workspace = true
 
 # Async
 tokio.workspace = true
-async-trait.workspace = true
 
 # Error handling
 thiserror.workspace = true
-anyhow.workspace = true
-
-# Logging
-tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

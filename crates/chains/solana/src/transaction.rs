@@ -1,14 +1,24 @@
 //! Solana transaction building and serialization
 
 use crate::address::Pubkey;
-use crate::{Lamports, SolanaError, Result};
+use crate::Lamports;
 use serde::{Deserialize, Serialize};
+
+/// A Solana transaction signature (64 bytes)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Signature(#[serde(with = "hex_array64")] pub [u8; 64]);
+
+impl Default for Signature {
+    fn default() -> Self {
+        Self([0u8; 64])
+    }
+}
 
 /// A Solana transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     /// Signatures (one per signer)
-    pub signatures: Vec<[u8; 64]>,
+    pub signatures: Vec<Signature>,
     /// The message containing instructions
     pub message: Message,
 }
@@ -21,6 +31,7 @@ pub struct Message {
     /// Account keys used in the transaction
     pub account_keys: Vec<Pubkey>,
     /// Recent blockhash
+    #[serde(with = "hex_array32")]
     pub recent_blockhash: [u8; 32],
     /// Instructions
     pub instructions: Vec<CompiledInstruction>,
@@ -99,7 +110,7 @@ impl Transaction {
         let num_signers = message.header.num_required_signatures as usize;
 
         Self {
-            signatures: vec![[0u8; 64]; num_signers],
+            signatures: vec![Signature::default(); num_signers],
             message,
         }
     }
@@ -112,7 +123,7 @@ impl Transaction {
     /// Apply a signature
     pub fn apply_signature(&mut self, signer_index: usize, signature: [u8; 64]) {
         if signer_index < self.signatures.len() {
-            self.signatures[signer_index] = signature;
+            self.signatures[signer_index] = Signature(signature);
         }
     }
 
@@ -123,7 +134,7 @@ impl Transaction {
         // Signatures
         data.push(self.signatures.len() as u8);
         for sig in &self.signatures {
-            data.extend_from_slice(sig);
+            data.extend_from_slice(&sig.0);
         }
 
         // Message
@@ -134,7 +145,7 @@ impl Transaction {
 
     /// Check if all signatures are present
     pub fn is_signed(&self) -> bool {
-        self.signatures.iter().all(|s| s != &[0u8; 64])
+        self.signatures.iter().all(|s| *s != Signature::default())
     }
 }
 
@@ -313,6 +324,58 @@ fn encode_compact_u16(buf: &mut Vec<u8>, value: u16) {
         buf.push(((value & 0x7f) | 0x80) as u8);
         buf.push((((value >> 7) & 0x7f) | 0x80) as u8);
         buf.push((value >> 14) as u8);
+    }
+}
+
+/// Serde helper for 64-byte arrays
+mod hex_array64 {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(data: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(data))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+        if bytes.len() != 64 {
+            return Err(serde::de::Error::custom("expected 64 bytes"));
+        }
+        let mut arr = [0u8; 64];
+        arr.copy_from_slice(&bytes);
+        Ok(arr)
+    }
+}
+
+/// Serde helper for 32-byte arrays
+mod hex_array32 {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(data: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(data))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
+        if bytes.len() != 32 {
+            return Err(serde::de::Error::custom("expected 32 bytes"));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Ok(arr)
     }
 }
 

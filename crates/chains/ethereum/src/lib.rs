@@ -17,6 +17,7 @@ pub mod signer;
 pub mod erc20;
 
 use crypto_core::SignatureType;
+use serde::{Serialize, Deserialize};
 use thiserror::Error;
 
 /// Ethereum-specific errors
@@ -102,7 +103,7 @@ impl Network {
 }
 
 /// Wei amount (smallest unit)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct Wei(pub u128);
 
 impl Wei {

@@ -373,9 +373,10 @@ mod tests {
         // Short string
         assert_eq!(rlp_encode_bytes(&[0x80]), vec![0x81, 0x80]);
 
-        // Longer string
-        let long = vec![0x00; 60];
+        // Longer string (use non-zero bytes to avoid zero-stripping)
+        let long = vec![0x42; 60];
         let encoded = rlp_encode_bytes(&long);
-        assert!(encoded.len() > 60);
+        // 60 bytes > 55, so it should use long-form encoding: 0xb8 + 1 byte length + 60 bytes = 62 bytes
+        assert!(encoded.len() > 60, "Expected >60 bytes, got {}", encoded.len());
     }
 }

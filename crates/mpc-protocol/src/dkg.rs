@@ -94,7 +94,7 @@ impl DkgCoordinator {
 
     fn generate_round1_secp256k1(&self) -> Result<DkgRound1Data> {
         use crypto_core::ecdsa::EcdsaKeyPair;
-        use crypto_core::traits::KeyPair;
+        use crypto_core::traits::{KeyPair, PublicKey};
 
         // Generate temporary key pair for commitment
         let keypair = EcdsaKeyPair::generate()?;
@@ -109,7 +109,7 @@ impl DkgCoordinator {
 
     fn generate_round1_ed25519(&self) -> Result<DkgRound1Data> {
         use crypto_core::eddsa::Ed25519KeyPair;
-        use crypto_core::traits::KeyPair;
+        use crypto_core::traits::{KeyPair, PublicKey};
 
         let keypair = Ed25519KeyPair::generate()?;
         let commitment = keypair.public_key().to_bytes();

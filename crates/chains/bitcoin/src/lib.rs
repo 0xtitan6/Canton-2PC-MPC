@@ -17,6 +17,7 @@ pub mod psbt;
 pub mod signer;
 
 use crypto_core::SignatureType;
+use serde::{Serialize, Deserialize};
 use thiserror::Error;
 
 /// Bitcoin-specific errors
@@ -102,7 +103,7 @@ impl From<BitcoinSignatureType> for SignatureType {
 }
 
 /// Bitcoin amount in satoshis
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Amount(pub u64);
 
 impl Amount {

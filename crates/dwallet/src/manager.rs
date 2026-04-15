@@ -179,11 +179,12 @@ impl DWalletManager {
 
         // Apply signature
         let signed_tx = adapter.apply_signature(&unsigned_tx, &signature)?;
+        let tx_hash = adapter.compute_tx_hash(&signed_tx)?;
 
         Ok(SignedTransaction {
             chain: params.chain,
             raw_transaction: signed_tx,
-            tx_hash: adapter.compute_tx_hash(&signed_tx)?,
+            tx_hash,
         })
     }
 }

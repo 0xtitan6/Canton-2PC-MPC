@@ -28,6 +28,8 @@ rand_core.workspace = true
 # Serialization
 serde.workspace = true
 hex.workspace = true
+bs58.workspace = true
+bech32.workspace = true
 
 # Error handling
 thiserror.workspace = true

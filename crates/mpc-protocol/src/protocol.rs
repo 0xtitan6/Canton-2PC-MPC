@@ -9,7 +9,7 @@ use crate::error::MpcError;
 use crate::types::*;
 use crate::Result;
 use async_trait::async_trait;
-use crypto_core::SignatureType;
+use crypto_core::{SignatureType, traits::{KeyPair, PublicKey}};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

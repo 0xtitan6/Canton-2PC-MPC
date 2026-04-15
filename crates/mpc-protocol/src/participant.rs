@@ -8,6 +8,7 @@ use crate::error::MpcError;
 use crate::signing::{SigningCoordinator, UserSigner};
 use crate::types::*;
 use crate::Result;
+use crypto_core::SignatureType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
