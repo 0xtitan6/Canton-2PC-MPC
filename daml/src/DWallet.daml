@@ -1,0 +1,316 @@
+-- | DWallet - Decentralized Wallet Contract
+--
+-- This module defines the core dWallet contract that enables Canton smart contracts
+-- to control native assets on external blockchains (Bitcoin, Ethereum, Solana, etc.)
+-- using 2PC-MPC (Two-Party Computation Multi-Party Computation) protocol.
+
+module DWallet where
+
+import DA.List (head)
+import DA.Optional (fromSome)
+import DA.Text qualified as T
+
+-- | Supported blockchain types
+data ChainType
+  = Bitcoin
+  | Ethereum
+  | Solana
+  | Polygon
+  | Arbitrum
+  | Optimism
+  | Avalanche
+  | Bsc
+  deriving (Eq, Show)
+
+-- | Signature algorithm type
+data SignatureType
+  = EcdsaSecp256k1  -- Bitcoin (legacy), Ethereum, EVM chains
+  | Ed25519         -- Solana, Cardano, etc.
+  | SchnorrSecp256k1 -- Bitcoin Taproot
+  deriving (Eq, Show)
+
+-- | Network participant role
+data ParticipantRole
+  = User           -- The wallet owner
+  | NetworkNode    -- MPC network participant
+  deriving (Eq, Show)
+
+-- | DKG (Distributed Key Generation) state
+data DkgState
+  = DkgPending
+  | DkgRound1
+  | DkgRound2
+  | DkgVerification
+  | DkgCompleted
+  | DkgFailed Text
+  deriving (Eq, Show)
+
+-- | Chain address for a specific blockchain
+data ChainAddress = ChainAddress
+  with
+    chain : ChainType
+    address : Text
+  deriving (Eq, Show)
+
+-- | The main dWallet contract
+--
+-- A dWallet is a decentralized wallet that requires both the user AND
+-- the network to participate in signing any transaction. This provides
+-- zero-trust security where no single party can move funds unilaterally.
+template DWallet
+  with
+    owner : Party                    -- The wallet owner
+    network : Party                  -- The MPC network operator
+    walletId : Text                  -- Unique wallet identifier
+    signatureType : SignatureType    -- Cryptographic signature scheme
+    publicKey : Text                 -- Combined public key (hex encoded)
+    addresses : [ChainAddress]       -- Derived addresses for each chain
+    dkgState : DkgState              -- Current DKG state
+    createdAt : Time                 -- Creation timestamp
+  where
+    signatory owner, network
+
+    -- Only owner can request signatures
+    key (owner, walletId) : (Party, Text)
+    maintainer key._1
+
+    -- | Request to sign a transaction
+    nonconsuming choice RequestSign : ContractId SignRequest
+      with
+        targetChain : ChainType
+        transactionData : Text  -- Hex-encoded transaction to sign
+        description : Text      -- Human-readable description
+      controller owner
+      do
+        now <- getTime
+        create SignRequest with
+          dwallet = self
+          dwalletId = walletId
+          requester = owner
+          network = network
+          targetChain = targetChain
+          transactionData = transactionData
+          description = description
+          requestedAt = now
+          status = SignPending
+
+    -- | Transfer ownership of the wallet
+    choice TransferOwnership : ContractId DWallet
+      with
+        newOwner : Party
+      controller owner
+      do
+        create this with owner = newOwner
+
+    -- | Archive the wallet (requires both parties)
+    choice ArchiveWallet : ()
+      controller owner, network
+      do
+        return ()
+
+-- | Sign request status
+data SignStatus
+  = SignPending
+  | SignApproved
+  | SignInProgress
+  | SignCompleted Text  -- Contains the signature
+  | SignRejected Text   -- Contains rejection reason
+  | SignFailed Text     -- Contains error message
+  deriving (Eq, Show)
+
+-- | Request to sign a transaction using the dWallet
+template SignRequest
+  with
+    dwallet : ContractId DWallet
+    dwalletId : Text
+    requester : Party
+    network : Party
+    targetChain : ChainType
+    transactionData : Text
+    description : Text
+    requestedAt : Time
+    status : SignStatus
+  where
+    signatory requester
+    observer network
+
+    -- | Network approves the signing request
+    choice ApproveSign : ContractId SignRequest
+      controller network
+      do
+        create this with status = SignApproved
+
+    -- | Network rejects the signing request
+    choice RejectSign : ContractId SignRequest
+      with
+        reason : Text
+      controller network
+      do
+        create this with status = SignRejected reason
+
+    -- | Network completes the signing
+    choice CompleteSign : ContractId SignedTransaction
+      with
+        signature : Text  -- Hex-encoded signature
+        txHash : Text     -- Transaction hash
+      controller network
+      do
+        now <- getTime
+        archive self
+        create SignedTransaction with
+          dwalletId = dwalletId
+          requester = requester
+          network = network
+          targetChain = targetChain
+          transactionData = transactionData
+          signature = signature
+          txHash = txHash
+          signedAt = now
+
+    -- | Mark signing as failed
+    choice FailSign : ContractId SignRequest
+      with
+        errorMessage : Text
+      controller network
+      do
+        create this with status = SignFailed errorMessage
+
+-- | A completed signed transaction
+template SignedTransaction
+  with
+    dwalletId : Text
+    requester : Party
+    network : Party
+    targetChain : ChainType
+    transactionData : Text
+    signature : Text
+    txHash : Text
+    signedAt : Time
+  where
+    signatory requester, network
+
+    -- | Archive after broadcast confirmation
+    choice ConfirmBroadcast : ()
+      with
+        blockHeight : Int
+        confirmations : Int
+      controller network
+      do
+        return ()
+
+-- | DKG ceremony contract for creating a new dWallet
+template DkgCeremony
+  with
+    initiator : Party           -- User initiating the wallet creation
+    network : Party             -- Network operator
+    walletId : Text             -- Proposed wallet ID
+    signatureType : SignatureType
+    threshold : Int             -- Required signers (for network side)
+    totalParticipants : Int     -- Total network participants
+    round1Commitments : [(Party, Text)]  -- Participant -> commitment
+    round2Shares : [(Party, Text)]       -- Participant -> encrypted shares
+    userPublicShare : Optional Text      -- User's public key share
+    networkPublicKey : Optional Text     -- Network's combined public key
+    state : DkgState
+    startedAt : Time
+  where
+    signatory initiator, network
+
+    -- | User submits their public key share
+    choice SubmitUserShare : ContractId DkgCeremony
+      with
+        publicShare : Text
+      controller initiator
+      do
+        create this with
+          userPublicShare = Some publicShare
+          state = DkgRound1
+
+    -- | Network node submits round 1 commitment
+    choice SubmitRound1 : ContractId DkgCeremony
+      with
+        participant : Party
+        commitment : Text
+      controller network
+      do
+        let newCommitments = (participant, commitment) :: round1Commitments
+        let newState = if length newCommitments >= totalParticipants
+                       then DkgRound2
+                       else DkgRound1
+        create this with
+          round1Commitments = newCommitments
+          state = newState
+
+    -- | Network node submits round 2 shares
+    choice SubmitRound2 : ContractId DkgCeremony
+      with
+        participant : Party
+        encryptedShares : Text
+      controller network
+      do
+        let newShares = (participant, encryptedShares) :: round2Shares
+        let newState = if length newShares >= totalParticipants
+                       then DkgVerification
+                       else DkgRound2
+        create this with
+          round2Shares = newShares
+          state = newState
+
+    -- | Complete DKG and create the dWallet
+    choice CompleteDkg : ContractId DWallet
+      with
+        combinedPublicKey : Text
+        derivedAddresses : [ChainAddress]
+      controller network
+      do
+        now <- getTime
+        archive self
+        create DWallet with
+          owner = initiator
+          network = network
+          walletId = walletId
+          signatureType = signatureType
+          publicKey = combinedPublicKey
+          addresses = derivedAddresses
+          dkgState = DkgCompleted
+          createdAt = now
+
+    -- | Fail the DKG ceremony
+    choice FailDkg : ContractId DkgCeremony
+      with
+        reason : Text
+      controller network
+      do
+        create this with state = DkgFailed reason
+
+-- | Factory contract for initiating dWallet creation
+template DWalletFactory
+  with
+    operator : Party  -- Network operator
+  where
+    signatory operator
+
+    -- | Create a new dWallet (initiates DKG)
+    nonconsuming choice CreateDWallet : ContractId DkgCeremony
+      with
+        user : Party
+        walletId : Text
+        signatureType : SignatureType
+        threshold : Int
+        totalParticipants : Int
+      controller user
+      do
+        now <- getTime
+        create DkgCeremony with
+          initiator = user
+          network = operator
+          walletId = walletId
+          signatureType = signatureType
+          threshold = threshold
+          totalParticipants = totalParticipants
+          round1Commitments = []
+          round2Shares = []
+          userPublicShare = None
+          networkPublicKey = None
+          state = DkgPending
+          startedAt = now

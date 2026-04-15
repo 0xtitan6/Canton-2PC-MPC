@@ -1,0 +1,255 @@
+-- | Policy - Access control and spending policies for dWallets
+--
+-- This module provides programmable policies that can be attached
+-- to dWallets to enforce spending limits, whitelists, time locks, etc.
+
+module Policy where
+
+import DWallet
+import DA.Time (RelTime, addRelTime)
+
+-- | Policy type
+data PolicyType
+  = SpendingLimit         -- Daily/weekly/monthly limits
+  | Whitelist             -- Only send to approved addresses
+  | Blacklist             -- Block certain addresses
+  | TimeLock              -- Lock until specific time
+  | MultiSig              -- Require multiple approvers
+  | RateLimiting          -- Limit transaction frequency
+  deriving (Eq, Show)
+
+-- | Time period for limits
+data TimePeriod
+  = Daily
+  | Weekly
+  | Monthly
+  | Yearly
+  deriving (Eq, Show)
+
+-- | Spending limit policy
+template SpendingLimitPolicy
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    chain : ChainType
+    limitAmount : Text        -- Maximum amount per period
+    period : TimePeriod
+    spentInPeriod : Text      -- Amount spent in current period
+    periodStart : Time        -- When current period started
+  where
+    signatory owner, network
+
+    key (owner, dwalletId, chain) : (Party, Text, ChainType)
+    maintainer key._1
+
+    -- | Check if a transfer is within limits
+    nonconsuming choice CheckLimit : Bool
+      with
+        amount : Text
+      controller owner
+      do
+        -- In production, implement proper decimal comparison
+        -- For now, just return True
+        return True
+
+    -- | Record a spend
+    choice RecordSpend : ContractId SpendingLimitPolicy
+      with
+        amount : Text
+      controller network
+      do
+        -- Add to spent amount (simplified - real impl needs decimal math)
+        create this with spentInPeriod = amount
+
+    -- | Reset period
+    choice ResetPeriod : ContractId SpendingLimitPolicy
+      controller network
+      do
+        now <- getTime
+        create this with
+          spentInPeriod = "0"
+          periodStart = now
+
+    -- | Update limit
+    choice UpdateLimit : ContractId SpendingLimitPolicy
+      with
+        newLimit : Text
+      controller owner
+      do
+        create this with limitAmount = newLimit
+
+-- | Whitelist policy - only allow transfers to approved addresses
+template WhitelistPolicy
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    chain : ChainType
+    allowedAddresses : [Text]
+  where
+    signatory owner, network
+
+    key (owner, dwalletId, chain) : (Party, Text, ChainType)
+    maintainer key._1
+
+    -- | Check if address is whitelisted
+    nonconsuming choice IsWhitelisted : Bool
+      with
+        address : Text
+      controller owner
+      do
+        return (address `elem` allowedAddresses)
+
+    -- | Add address to whitelist
+    choice AddToWhitelist : ContractId WhitelistPolicy
+      with
+        address : Text
+      controller owner
+      do
+        create this with allowedAddresses = address :: allowedAddresses
+
+    -- | Remove address from whitelist
+    choice RemoveFromWhitelist : ContractId WhitelistPolicy
+      with
+        address : Text
+      controller owner
+      do
+        create this with allowedAddresses = filter (/= address) allowedAddresses
+
+-- | Time lock policy - prevent transfers until a specific time
+template TimeLockPolicy
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    unlockTime : Time
+    isLocked : Bool
+  where
+    signatory owner, network
+
+    key (owner, dwalletId) : (Party, Text)
+    maintainer key._1
+
+    -- | Check if wallet is unlocked
+    nonconsuming choice CheckUnlocked : Bool
+      controller owner
+      do
+        now <- getTime
+        return (now >= unlockTime || not isLocked)
+
+    -- | Extend lock time
+    choice ExtendLock : ContractId TimeLockPolicy
+      with
+        newUnlockTime : Time
+      controller owner
+      do
+        create this with unlockTime = newUnlockTime
+
+    -- | Manually unlock (if past unlock time)
+    choice Unlock : ContractId TimeLockPolicy
+      controller owner
+      do
+        now <- getTime
+        assertMsg "Cannot unlock before unlock time" (now >= unlockTime)
+        create this with isLocked = False
+
+-- | Multi-signature policy - require multiple approvers
+template MultiSigPolicy
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    approvers : [Party]
+    requiredApprovals : Int
+  where
+    signatory owner, network
+    observer approvers
+
+    key (owner, dwalletId) : (Party, Text)
+    maintainer key._1
+
+    -- | Create a multi-sig approval request
+    nonconsuming choice CreateApprovalRequest : ContractId MultiSigApproval
+      with
+        transactionData : Text
+        description : Text
+      controller owner
+      do
+        now <- getTime
+        create MultiSigApproval with
+          dwalletId = dwalletId
+          owner = owner
+          network = network
+          approvers = approvers
+          requiredApprovals = requiredApprovals
+          currentApprovals = []
+          transactionData = transactionData
+          description = description
+          createdAt = now
+          expiresAt = addRelTime now (hours 24)
+
+    -- | Add approver
+    choice AddApprover : ContractId MultiSigPolicy
+      with
+        newApprover : Party
+      controller owner
+      do
+        create this with approvers = newApprover :: approvers
+
+    -- | Remove approver
+    choice RemoveApprover : ContractId MultiSigPolicy
+      with
+        approverToRemove : Party
+      controller owner
+      do
+        create this with approvers = filter (/= approverToRemove) approvers
+
+-- | Multi-sig approval tracking
+template MultiSigApproval
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    approvers : [Party]
+    requiredApprovals : Int
+    currentApprovals : [Party]
+    transactionData : Text
+    description : Text
+    createdAt : Time
+    expiresAt : Time
+  where
+    signatory owner
+    observer approvers, network
+
+    -- | Approve the transaction
+    choice Approve : ContractId MultiSigApproval
+      with
+        approver : Party
+      controller approver
+      do
+        assertMsg "Not an authorized approver" (approver `elem` approvers)
+        assertMsg "Already approved" (approver `notElem` currentApprovals)
+        create this with currentApprovals = approver :: currentApprovals
+
+    -- | Check if fully approved
+    nonconsuming choice IsFullyApproved : Bool
+      controller owner
+      do
+        return (length currentApprovals >= requiredApprovals)
+
+    -- | Execute if fully approved
+    choice Execute : ()
+      controller owner
+      do
+        assertMsg "Not enough approvals" (length currentApprovals >= requiredApprovals)
+        now <- getTime
+        assertMsg "Approval expired" (now < expiresAt)
+        -- In real implementation, this would trigger the actual signing
+        return ()
+
+    -- | Cancel the approval request
+    choice CancelApproval : ()
+      controller owner
+      do
+        return ()

@@ -1,0 +1,86 @@
+-- | Main - Entry point and setup for Canton 2PC-MPC
+--
+-- This module re-exports all dWallet functionality and provides
+-- setup helpers for initializing the system.
+
+module Main where
+
+import DWallet
+import Transfer
+import Policy
+
+-- | Setup contract for initializing the dWallet system
+template Setup
+  with
+    operator : Party
+  where
+    signatory operator
+
+    -- | Initialize the dWallet factory
+    choice Initialize : ContractId DWalletFactory
+      controller operator
+      do
+        create DWalletFactory with
+          operator = operator
+
+-- | Example: Create a complete dWallet with policies
+template DWalletWithPolicies
+  with
+    owner : Party
+    network : Party
+    walletId : Text
+    dwallet : ContractId DWallet
+    spendingPolicy : Optional (ContractId SpendingLimitPolicy)
+    whitelistPolicy : Optional (ContractId WhitelistPolicy)
+    timeLockPolicy : Optional (ContractId TimeLockPolicy)
+    multiSigPolicy : Optional (ContractId MultiSigPolicy)
+  where
+    signatory owner, network
+
+    -- | Execute a policy-checked transfer
+    nonconsuming choice PolicyCheckedTransfer : ContractId TransferRequest
+      with
+        targetAddress : Text
+        amount : Text
+        asset : Asset
+        chain : ChainType
+      controller owner
+      do
+        now <- getTime
+
+        -- Check spending limit if policy exists
+        case spendingPolicy of
+          Some policyCid -> do
+            withinLimit <- exercise policyCid CheckLimit with amount = amount
+            assertMsg "Transfer exceeds spending limit" withinLimit
+          None -> return ()
+
+        -- Check whitelist if policy exists
+        case whitelistPolicy of
+          Some policyCid -> do
+            isAllowed <- exercise policyCid IsWhitelisted with address = targetAddress
+            assertMsg "Address not in whitelist" isAllowed
+          None -> return ()
+
+        -- Check time lock if policy exists
+        case timeLockPolicy of
+          Some policyCid -> do
+            isUnlocked <- exercise policyCid CheckUnlocked
+            assertMsg "Wallet is time-locked" isUnlocked
+          None -> return ()
+
+        -- Create the transfer request
+        create TransferRequest with
+          dwalletId = walletId
+          owner = owner
+          network = network
+          sourceChain = chain
+          targetAddress = targetAddress
+          asset = asset
+          amount = amount
+          fee = None
+          memo = None
+          status = TransferPending
+          createdAt = now
+          signRequestId = None
+          txHash = None
