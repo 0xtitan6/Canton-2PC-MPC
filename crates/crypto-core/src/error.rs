@@ -60,12 +60,17 @@ pub enum CryptoError {
 
 impl From<k256::ecdsa::Error> for CryptoError {
     fn from(e: k256::ecdsa::Error) -> Self {
-        CryptoError::SigningFailed(e.to_string())
+        CryptoError::SigningFailed(format!("ECDSA error: {}", e))
     }
 }
 
-impl From<ed25519_dalek::SignatureError> for CryptoError {
-    fn from(e: ed25519_dalek::SignatureError) -> Self {
-        CryptoError::SigningFailed(e.to_string())
+// Note: ed25519_dalek::SignatureError and k256::ecdsa::Error may share
+// the same underlying signature::Error type, so we provide conversion helpers
+// instead of From trait to avoid conflicts
+
+impl CryptoError {
+    /// Create from ed25519 signature error
+    pub fn from_ed25519_error(e: ed25519_dalek::SignatureError) -> Self {
+        CryptoError::SigningFailed(format!("Ed25519 error: {}", e))
     }
 }

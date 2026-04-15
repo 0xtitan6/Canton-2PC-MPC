@@ -87,14 +87,12 @@ impl Address {
         let sha = sha256(public_key);
         let hash160 = ripemd160(&sha);
 
-        // Bech32 encoding with witness version 0
+        // Use the bech32::segwit module for proper SegWit v0 encoding
         let hrp = bech32::Hrp::parse(network.bech32_hrp())
             .map_err(|e| BitcoinError::InvalidAddress(e.to_string()))?;
 
-        let mut data = vec![0u8]; // witness version 0
-        data.extend(convert_bits(&hash160, 8, 5, true)?);
-
-        let address = bech32::encode::<bech32::Bech32>(hrp, &data)
+        // encode_v0 handles the bech32 encoding and witness version automatically
+        let address = bech32::segwit::encode_v0(hrp, &hash160)
             .map_err(|e| BitcoinError::InvalidAddress(e.to_string()))?;
 
         // Script: OP_0 <hash160>
@@ -117,14 +115,12 @@ impl Address {
             ));
         }
 
-        // Bech32m encoding with witness version 1
+        // Use the bech32::segwit module for proper Taproot (SegWit v1) encoding
         let hrp = bech32::Hrp::parse(network.bech32_hrp())
             .map_err(|e| BitcoinError::InvalidAddress(e.to_string()))?;
 
-        let mut data = vec![1u8]; // witness version 1
-        data.extend(convert_bits(x_only_pubkey, 8, 5, true)?);
-
-        let address = bech32::encode::<bech32::Bech32m>(hrp, &data)
+        // encode_v1 handles the bech32m encoding and witness version automatically
+        let address = bech32::segwit::encode_v1(hrp, x_only_pubkey)
             .map_err(|e| BitcoinError::InvalidAddress(e.to_string()))?;
 
         // Script: OP_1 <x-only-pubkey>
@@ -324,7 +320,8 @@ mod tests {
         ).unwrap();
 
         let address = Address::p2tr(&x_only, Network::Mainnet).unwrap();
-        assert!(address.address.starts_with("bc1p"));
+        println!("Generated address: {}", address.address);
+        assert!(address.address.starts_with("bc1p"), "Expected bc1p, got: {}", address.address);
         assert_eq!(address.address_type, AddressType::P2TR);
     }
 }

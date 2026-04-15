@@ -32,7 +32,7 @@ impl KeyPair for SchnorrKeyPair {
 
     fn generate() -> Result<Self> {
         let signing_key = SigningKey::random(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
+        let verifying_key = *signing_key.verifying_key();
         Ok(Self {
             signing_key,
             verifying_key,
@@ -52,7 +52,7 @@ impl KeyPair for SchnorrKeyPair {
     }
 
     fn from_private_key(private_key: Self::PrivateKey) -> Result<Self> {
-        let verifying_key = private_key.0.verifying_key();
+        let verifying_key = *private_key.0.verifying_key();
         Ok(Self {
             signing_key: private_key.0,
             verifying_key,
@@ -93,7 +93,7 @@ impl SchnorrPublicKey {
 
         // Tweak the public key with the tap tweak
         // For a key-path-only spend, tweak = tagged_hash("TapTweak", pubkey)
-        let tweak = tagged_hash("TapTweak", &pubkey_bytes);
+        let _tweak = tagged_hash("TapTweak", &pubkey_bytes);
 
         // In production, we'd properly compute the tweaked key
         // For now, we'll use the untweaked key for address generation
@@ -104,11 +104,9 @@ impl SchnorrPublicKey {
             BitcoinNetwork::Regtest => "bcrt",
         };
 
-        // Bech32m encoding for Taproot (witness version 1)
-        let mut data = vec![1u8]; // witness version 1
-        data.extend(bech32_convert_bits(&pubkey_bytes, 8, 5, true).unwrap());
-
-        bech32::encode::<bech32::Bech32m>(bech32::Hrp::parse(hrp).unwrap(), &data)
+        // Use the bech32::segwit module for proper Taproot (SegWit v1) encoding
+        let hrp = bech32::Hrp::parse(hrp).unwrap();
+        bech32::segwit::encode_v1(hrp, &pubkey_bytes)
             .unwrap_or_else(|_| "invalid".to_string())
     }
 
