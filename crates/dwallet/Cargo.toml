@@ -1,0 +1,31 @@
+[package]
+name = "dwallet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "dWallet management for Canton 2PC-MPC - decentralized key management units"
+
+[dependencies]
+crypto-core = { path = "../crypto-core" }
+mpc-protocol = { path = "../mpc-protocol" }
+chain-bitcoin = { path = "../chains/bitcoin" }
+chain-ethereum = { path = "../chains/ethereum" }
+chain-solana = { path = "../chains/solana" }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
