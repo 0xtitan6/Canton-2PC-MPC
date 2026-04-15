@@ -1,0 +1,179 @@
+-- | Transfer - Cross-chain transfer contracts
+--
+-- This module provides contracts for initiating and tracking
+-- cross-chain asset transfers using dWallets.
+
+module Transfer where
+
+import DWallet
+
+-- | Transfer status
+data TransferStatus
+  = TransferPending
+  | TransferBuilding      -- Building the transaction
+  | TransferSigning       -- Waiting for MPC signature
+  | TransferBroadcasting  -- Broadcasting to target chain
+  | TransferConfirming    -- Waiting for confirmations
+  | TransferCompleted
+  | TransferFailed Text
+  deriving (Eq, Show)
+
+-- | Asset type for transfers
+data Asset
+  = NativeAsset            -- Native chain asset (BTC, ETH, SOL)
+  | TokenAsset Text Text   -- Contract address, token symbol
+  deriving (Eq, Show)
+
+-- | A cross-chain transfer request
+template TransferRequest
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    sourceChain : ChainType
+    targetAddress : Text       -- Destination address on source chain
+    asset : Asset
+    amount : Text              -- Amount as string (to handle large numbers)
+    fee : Optional Text        -- Optional fee override
+    memo : Optional Text       -- Optional memo/data field
+    status : TransferStatus
+    createdAt : Time
+    signRequestId : Optional (ContractId SignRequest)
+    txHash : Optional Text
+  where
+    signatory owner
+    observer network
+
+    -- | Network builds the unsigned transaction
+    choice BuildTransaction : ContractId TransferRequest
+      with
+        unsignedTx : Text
+        estimatedFee : Text
+      controller network
+      do
+        create this with
+          status = TransferBuilding
+          fee = Some estimatedFee
+
+    -- | Submit for signing (creates a SignRequest)
+    choice SubmitForSigning : ContractId TransferRequest
+      with
+        dwalletCid : ContractId DWallet
+        unsignedTx : Text
+      controller owner
+      do
+        signReq <- exercise dwalletCid RequestSign with
+          targetChain = sourceChain
+          transactionData = unsignedTx
+          description = "Transfer " <> amount <> " to " <> targetAddress
+        create this with
+          status = TransferSigning
+          signRequestId = Some signReq
+
+    -- | Mark as broadcasting
+    choice MarkBroadcasting : ContractId TransferRequest
+      with
+        transactionHash : Text
+      controller network
+      do
+        create this with
+          status = TransferBroadcasting
+          txHash = Some transactionHash
+
+    -- | Mark as confirming
+    choice MarkConfirming : ContractId TransferRequest
+      with
+        confirmations : Int
+      controller network
+      do
+        create this with status = TransferConfirming
+
+    -- | Complete the transfer
+    choice CompleteTransfer : ContractId TransferReceipt
+      with
+        finalTxHash : Text
+        blockHeight : Int
+        confirmations : Int
+      controller network
+      do
+        now <- getTime
+        archive self
+        create TransferReceipt with
+          dwalletId = dwalletId
+          owner = owner
+          network = network
+          sourceChain = sourceChain
+          targetAddress = targetAddress
+          asset = asset
+          amount = amount
+          txHash = finalTxHash
+          blockHeight = blockHeight
+          confirmations = confirmations
+          completedAt = now
+
+    -- | Fail the transfer
+    choice FailTransfer : ContractId TransferRequest
+      with
+        reason : Text
+      controller network
+      do
+        create this with status = TransferFailed reason
+
+-- | Receipt for a completed transfer
+template TransferReceipt
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    sourceChain : ChainType
+    targetAddress : Text
+    asset : Asset
+    amount : Text
+    txHash : Text
+    blockHeight : Int
+    confirmations : Int
+    completedAt : Time
+  where
+    signatory owner, network
+
+    -- Archive receipt after acknowledgment
+    choice AcknowledgeReceipt : ()
+      controller owner
+      do
+        return ()
+
+-- | Batch transfer for multiple recipients
+template BatchTransfer
+  with
+    dwalletId : Text
+    owner : Party
+    network : Party
+    sourceChain : ChainType
+    transfers : [(Text, Text)]  -- (address, amount) pairs
+    asset : Asset
+    status : TransferStatus
+    createdAt : Time
+  where
+    signatory owner
+    observer network
+
+    -- | Execute batch transfer
+    choice ExecuteBatch : [ContractId TransferRequest]
+      controller owner
+      do
+        now <- getTime
+        mapA (\(addr, amt) -> create TransferRequest with
+          dwalletId = dwalletId
+          owner = owner
+          network = network
+          sourceChain = sourceChain
+          targetAddress = addr
+          asset = asset
+          amount = amt
+          fee = None
+          memo = None
+          status = TransferPending
+          createdAt = now
+          signRequestId = None
+          txHash = None
+          ) transfers

@@ -1,0 +1,13 @@
+sdk-version: 2.8.0
+name: canton-2pc-mpc
+version: 0.1.0
+source: src
+parties:
+  - Alice
+  - Bob
+  - Network
+dependencies:
+  - daml-prim
+  - daml-stdlib
+build-options:
+  - --target=2.1
