@@ -22,6 +22,12 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+# Phase 1: async actor-per-party transport
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+async-trait = "0.1"
+futures = "0.3"
+
 # These pre-release deps aren't used directly here, but pulling them into the
 # workspace resolution graph via an explicit (even if unused) dep forces Cargo
 # to respect the `=` version pins from the workspace and prevents a silent
