@@ -1,329 +1,135 @@
 # Canton 2PC-MPC
 
-**Bringing Native Bitcoin, Ethereum, Solana, and more to Canton Network**
+**Research implementation of [2PC-MPC](https://eprint.iacr.org/2024/253) threshold ECDSA, targeting Canton Network as the broadcast channel.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Crypto: CC-BY-NC-ND-4.0](https://img.shields.io/badge/Crypto%20deps-CC--BY--NC--ND--4.0-red.svg)](#licensing-and-scope)
 
-A Rust implementation of the 2PC-MPC (Two-Party Computation Multi-Party Computation) protocol for threshold signatures, enabling Canton Network smart contracts to natively control assets on Bitcoin, Ethereum, Solana, and other blockchains without bridges or wrapped tokens.
+This is a **personal research project** exploring how far the 2PC-MPC protocol — published by [dWallet Labs](https://dwalletlabs.com) and implemented in their open-source [inkrypto](https://github.com/dwallet-labs/inkrypto) library — can be pushed toward a Canton Network deployment. It is explicitly **not a product** and not suitable for any commercial use (see [licensing](#licensing-and-scope)).
 
-## Overview
+## What this actually is
 
-Canton 2PC-MPC enables **true cross-chain interoperability** by allowing Daml smart contracts on Canton Network to sign transactions on any supported blockchain. Unlike traditional bridges that require trusting custodians or wrapped tokens, this system provides **zero-trust security** through cryptographic guarantees.
+A thin Rust wrapper that embeds `dwallet-labs/inkrypto` (pinned to rev `abd7f010`) and drives its 2PC-MPC state machine, working up toward using **Canton 3.4 as the broadcast channel** through which MPC parties exchange messages.
 
-### Key Features
+The 2PC-MPC protocol produces standard ECDSA signatures over secp256k1, so any signature this project emits is verifiable by stock `k256` — and by extension, by every Bitcoin / Ethereum / EVM node on the planet.
 
-- **Native Asset Control**: Control real BTC, ETH, SOL directly from Canton smart contracts
-- **Zero-Trust Security**: Neither the user nor the network can sign alone
-- **Multi-Chain Support**: Bitcoin, Ethereum, Solana, and EVM-compatible chains
-- **High Performance**: Sub-second signature generation with massive parallelism
-- **Canton Integration**: Deep integration with Daml smart contracts and Canton Ledger API
+## Current status
+
+| Phase | Scope | Status |
+|---|---|---|
+| **0** | In-process ceremony: DKG → presign → sign, verified by both inkrypto and k256 | ✅ [`tests/local_ceremony.rs`](crates/mpc-protocol/tests/local_ceremony.rs) |
+| **1** | Actor-per-party multi-task ceremony over an in-process broadcast bus | ✅ [`tests/multiparty_ceremony.rs`](crates/mpc-protocol/tests/multiparty_ceremony.rs) |
+| **2** | Replace the in-process bus with the Canton 3.4 Ledger API v2 (DAR + tonic client + session driver) | 🏗️ next |
+| **3** | Broadcast a real ECDSA transaction on a chain testnet (Ethereum Sepolia first) | ⏳ |
+
+## Demo
+
+```bash
+# Phase 0: single-process ceremony, 2-of-2 weighted threshold
+cargo test -p mpc-protocol --test local_ceremony --release -- --nocapture
+
+# Phase 1: actor-per-party over tokio::broadcast bus, same topology
+cargo test -p mpc-protocol --test multiparty_ceremony --release -- --nocapture
+```
+
+Sample output (Phase 1):
+
+```
+Phase 1 multi-actor ceremony OK:
+  public_key (SEC1) = 0242f8e84a3c1e6a79f8a1a8678a857bf3cec975a05fc58040ee152a7c51f3445f
+  signature r||s    = fd89bb2bfff7a4fbe0aa6b9740c0592c9b4f84bb7b9b713efece153d6b64e180...
+  (verifies under both inkrypto and stock k256)
+test ... ok   finished in 8.70s
+```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       Canton Network                            │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                 Daml Smart Contracts                     │   │
-│  │     (DeFi, Custody, Tokenization, Trading, etc.)        │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │              Canton Integration Layer                    │   │
-│  │         (Ledger API, Daml Templates, Events)            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                              │                                  │
-└──────────────────────────────┼──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    2PC-MPC Protocol Layer                       │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────────┐   │
-│  │      DKG      │  │    Signing    │  │  dWallet Manager  │   │
-│  │  (Key Gen)    │  │   Protocol    │  │                   │   │
-│  └───────────────┘  └───────────────┘  └───────────────────┘   │
-│                              │                                  │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │              Cryptographic Primitives                    │   │
-│  │  ┌─────────┐  ┌─────────────┐  ┌───────────────────┐    │   │
-│  │  │  ECDSA  │  │   EdDSA     │  │     Schnorr       │    │   │
-│  │  │secp256k1│  │  Ed25519    │  │  (BIP-340)        │    │   │
-│  │  └─────────┘  └─────────────┘  └───────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                               │
-           ┌───────────────────┼───────────────────┐
-           ▼                   ▼                   ▼
-     ┌──────────┐        ┌──────────┐        ┌──────────┐
-     │  Bitcoin │        │ Ethereum │        │  Solana  │
-     │   BTC    │        │ ETH/ERC20│        │ SOL/SPL  │
-     └──────────┘        └──────────┘        └──────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                  Phase 1 — current (in-process)                   │
+│                                                                   │
+│   ┌──────────────┐    ┌──────────────────────────────────────┐    │
+│   │ Orchestrator │    │  InProcessBus (tokio::broadcast)     │    │
+│   │              │    │                                      │    │
+│   │ • DKG client │    │                                      │    │
+│   │ • Sign client│    │                                      │    │
+│   └──────┬───────┘    └──────▲───────────▲───────────▲──────┘    │
+│          │                   │           │           │           │
+│          │ kicks off         │ pub/sub   │ pub/sub   │ pub/sub   │
+│          ▼                   │           │           │           │
+│   ┌──────────────┐    ┌──────┴──────┐ ┌──┴──────────┐ ┌───────┐  │
+│   │ (one tokio   │───▶│  Actor P1   │ │  Actor P2   │ │  ...  │  │
+│   │  task per    │    │  (inkrypto  │ │  (inkrypto  │ │       │  │
+│   │  party)      │    │   state m.) │ │   state m.) │ │       │  │
+│   └──────────────┘    └─────────────┘ └─────────────┘ └───────┘  │
+└───────────────────────────────────────────────────────────────────┘
+
+                              ▼ (Phase 2)
+
+┌───────────────────────────────────────────────────────────────────┐
+│                  Phase 2 — Canton as broadcast                    │
+│                                                                   │
+│   ┌──────────────┐             ┌────────────────────────────┐     │
+│   │ Orchestrator │             │    Canton 3.4 Ledger API   │     │
+│   │              │ submit      │       (CommandService +    │     │
+│   │              │──────────▶  │        UpdateService)      │     │
+│   │              │             │                            │     │
+│   │              │ ◀───────────│  `MpcSession` / `RoundMsg` │     │
+│   └──────────────┘ tx stream   │   Daml templates           │     │
+│                                └────────────────────────────┘     │
+│                                                                   │
+│   CantonBus just swaps InProcessBus — actors are unchanged.       │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-## Supported Chains
+Key crates (workspace):
 
-| Chain | Signature Scheme | Address Types | Tokens |
-|-------|-----------------|---------------|--------|
-| **Bitcoin** | ECDSA secp256k1 | P2PKH, P2WPKH | BTC |
-| **Bitcoin (Taproot)** | Schnorr | P2TR | BTC |
-| **Ethereum** | ECDSA secp256k1 | EOA | ETH, ERC-20 |
-| **Polygon** | ECDSA secp256k1 | EOA | MATIC, ERC-20 |
-| **Arbitrum** | ECDSA secp256k1 | EOA | ETH, ERC-20 |
-| **Optimism** | ECDSA secp256k1 | EOA | ETH, ERC-20 |
-| **Base** | ECDSA secp256k1 | EOA | ETH, ERC-20 |
-| **Avalanche** | ECDSA secp256k1 | EOA | AVAX, ERC-20 |
-| **BNB Chain** | ECDSA secp256k1 | EOA | BNB, BEP-20 |
-| **Solana** | EdDSA Ed25519 | Pubkey | SOL, SPL |
+| Path | Role |
+|---|---|
+| [`crates/mpc-protocol`](crates/mpc-protocol) | Phase 0 & 1 implementation — thin wrapper over inkrypto + actor model |
+| [`daml`](daml) | Daml templates (placeholder — will be ported to Canton 3.4 in Phase 2) |
+| `crates/{crypto-core,chains/*,dwallet,canton-integration}` | **Currently excluded from workspace.** These were placeholder scaffolding from an earlier iteration and depend on an older k256 line that is incompatible with inkrypto's pre-release crypto deps. They'll be ported back crate-by-crate as the real control/signing plane grows. |
 
-## Project Structure
+## How the protocol runs (Phase 1)
 
-```
-Canton-2PC-MPC/
-├── Cargo.toml                    # Workspace configuration
-├── crates/
-│   ├── crypto-core/              # Cryptographic primitives
-│   │   ├── ecdsa.rs              # ECDSA secp256k1
-│   │   ├── eddsa.rs              # EdDSA Ed25519
-│   │   ├── schnorr.rs            # Schnorr (BIP-340)
-│   │   └── hash.rs               # Hash functions
-│   │
-│   ├── mpc-protocol/             # 2PC-MPC protocol implementation
-│   │   ├── protocol.rs           # Core protocol coordinator
-│   │   ├── dkg.rs                # Distributed Key Generation
-│   │   ├── signing.rs            # Threshold signing
-│   │   ├── participant.rs        # MPC participant
-│   │   └── network.rs            # Network layer
-│   │
-│   ├── chains/
-│   │   ├── bitcoin/              # Bitcoin support
-│   │   │   ├── address.rs        # Address generation
-│   │   │   ├── transaction.rs    # TX building
-│   │   │   ├── psbt.rs           # PSBT support
-│   │   │   └── signer.rs         # Signing utilities
-│   │   │
-│   │   ├── ethereum/             # Ethereum/EVM support
-│   │   │   ├── address.rs        # Address derivation
-│   │   │   ├── transaction.rs    # TX building (legacy/EIP-1559)
-│   │   │   ├── signer.rs         # Signing utilities
-│   │   │   └── erc20.rs          # ERC-20 interactions
-│   │   │
-│   │   └── solana/               # Solana support
-│   │       ├── address.rs        # Pubkey handling
-│   │       ├── transaction.rs    # TX building
-│   │       ├── signer.rs         # Signing utilities
-│   │       └── spl_token.rs      # SPL token support
-│   │
-│   ├── dwallet/                  # dWallet management
-│   │   ├── wallet.rs             # dWallet abstraction
-│   │   ├── manager.rs            # Wallet manager
-│   │   └── chain_adapter.rs      # Chain adapters
-│   │
-│   └── canton-integration/       # Canton Network integration
-│       ├── ledger_api.rs         # Canton Ledger API client
-│       ├── daml_types.rs         # Daml type definitions
-│       ├── service.rs            # Main service
-│       └── events.rs             # Event handling
-```
+One ceremony has five stages. Centralized (client) rounds are one-shot synchronous calls made by the orchestrator; decentralized (network) rounds are driven by actors.
 
-## How It Works
+1. **DKG centralized** — client generates its key share + proof of knowledge locally.
+2. **DKG decentralized** — one round. Each network party runs `advance()`, publishes its message, collects quorum, finalizes into the joint DKG output.
+3. **Presign decentralized** — four rounds, same actor loop.
+4. **Sign centralized** — client generates its partial signature from the presign + message digest.
+5. **Sign decentralized** — two rounds. Decrypter subset advances, final round yields a full ECDSA signature.
 
-### 1. Two-Party Computation (2PC)
-
-The system ensures that **both the user AND the network** must participate in every signature. This is the "2PC" part:
-
-- **User**: Holds one share of the private key
-- **Network**: Holds the other share, distributed among nodes via MPC
-
-Neither party can sign alone, providing zero-trust security.
-
-### 2. Multi-Party Computation (MPC)
-
-The network's share is itself distributed across multiple nodes using threshold cryptography:
-
-- **Threshold**: t-of-n nodes must participate
-- **No single point of failure**: No single node can reconstruct the key
-- **Byzantine fault tolerance**: Tolerates malicious nodes
-
-### 3. Distributed Key Generation (DKG)
-
-When creating a new dWallet:
-
-1. User generates their secret share locally
-2. Network nodes run FROST DKG to generate the network's share
-3. Public key is computed without revealing any private key
-
-### 4. Signing Protocol
-
-When signing a transaction:
-
-1. User generates nonce commitment
-2. Network nodes generate their nonce commitments
-3. All commitments are broadcast
-4. Partial signatures are computed
-5. Final signature is aggregated
-
-## Usage
-
-### Creating a dWallet
-
-```rust
-use canton_2pc_mpc::dwallet::{DWalletConfig, DWalletManager};
-
-// Create manager
-let manager = DWalletManager::new();
-
-// Create a wallet for Bitcoin/Ethereum (ECDSA)
-let config = DWalletConfig::for_bitcoin_ethereum(2, 3)
-    .with_name("My Cross-Chain Wallet");
-
-let wallet_id = manager.create_wallet(config).await?;
-
-// Get derived addresses
-let wallet = manager.get_wallet(&wallet_id).await?;
-println!("Bitcoin: {}", wallet.address("bitcoin").unwrap());
-println!("Ethereum: {}", wallet.address("ethereum").unwrap());
-```
-
-### Signing a Transaction
-
-```rust
-// Sign a message
-let message = b"Hello, Canton!";
-let signature = manager.sign(&wallet_id, "ethereum", message).await?;
-
-// Build and sign a transaction
-let params = TransactionParams {
-    chain: "ethereum".to_string(),
-    to: "0x742d35Cc6634C0532925a3b844Bc9e7595f1".to_string(),
-    amount: 1_000_000_000_000_000_000, // 1 ETH
-    data: None,
-    fee_params: None,
-};
-
-let signed_tx = manager.build_and_sign_transaction(
-    &wallet_id,
-    ChainType::Ethereum,
-    params,
-).await?;
-
-println!("TX Hash: {}", signed_tx.tx_hash);
-```
-
-### Canton Integration
-
-```rust
-use canton_integration::{CantonConfig, CantonMpcService};
-
-// Configure Canton connection
-let config = CantonConfig {
-    ledger_host: "localhost".to_string(),
-    ledger_port: 6865,
-    party_id: "participant1".to_string(),
-    application_id: "my-app".to_string(),
-    use_tls: false,
-};
-
-// Start service
-let service = CantonMpcService::new(config, dwallet_manager);
-service.start().await?;
-
-// Create dWallet via Canton
-let contract = service.create_dwallet("ecdsa_secp256k1", 2).await?;
-
-// Execute cross-chain transfer
-let transfer = service.transfer(
-    &contract.dwallet_id,
-    "ethereum",
-    "0x742d35Cc6634C0532925a3b844Bc9e7595f1",
-    "1000000000000000000",
-    "ETH",
-).await?;
-```
+The 2-of-2 unit-weight topology that Phase 1 targets has every tangible party in every round's subset, so the actor assumes uniform participation. Weighted topologies with per-round decrypter subsets (e.g. the `(4, {1:2, 2:1, 3:3})` case inkrypto tests) need the actor to route by `parties_per_round` — a Phase 1.5 follow-up.
 
 ## Building
 
-### Prerequisites
-
-- Rust 1.75+
-- Cargo
-
-### Build
-
 ```bash
-# Clone the repository
-git clone https://github.com/example/canton-2pc-mpc
-cd canton-2pc-mpc
-
-# Build all crates
+# Rust 1.85+ required (edition 2024 in inkrypto transitive deps)
+rustc --version
 cargo build --release
-
-# Run tests
-cargo test
-
-# Build documentation
-cargo doc --open
+cargo test --release -- --nocapture
 ```
 
-## Configuration
+Expect the first build to take ~5–10 min — inkrypto pulls in ~20 pre-release crypto crates pinned to its lockfile versions.
 
-### MPC Protocol
+## Licensing and scope
 
-```rust
-let config = ProtocolConfig {
-    signature_type: SignatureType::EcdsaSecp256k1,
-    threshold: 2,           // 2-of-3 threshold
-    total_participants: 3,
-    round_timeout_ms: 30_000,
-    max_concurrent_sessions: 100,
-    proactive_security: false,
-};
-```
+This repository is dual-concern:
 
-### Canton Connection
+- **This project's original code** (everything under this repo that isn't `inkrypto`): Apache-2.0.
+- **`dwallet-labs/inkrypto`** (via git dep): **[CC-BY-NC-ND-4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/)**. That license **forbids commercial use and derivative works**. This project uses it strictly for personal non-distributed research. You may not build a product on this repo without first obtaining a commercial license from dWallet Labs (`dev@dwalletlabs.com`).
 
-```rust
-let config = CantonConfig {
-    ledger_host: "canton-node.example.com".to_string(),
-    ledger_port: 6865,
-    party_id: "my-party".to_string(),
-    application_id: "canton-2pc-mpc".to_string(),
-    use_tls: true,
-};
-```
+In plain terms: read it, run it locally, learn from it. Do not ship it.
 
-## Security Considerations
+## Non-goals
 
-1. **Key Material**: Private key shares are never combined; signing happens distributively
-2. **Network Security**: Use TLS for all network communication
-3. **Threshold Selection**: Choose threshold based on your trust model (e.g., 2-of-3, 3-of-5)
-4. **Proactive Security**: Consider enabling key refresh for long-lived wallets
+- Not a fork of inkrypto — inkrypto is used as-is via git dep, unmodified.
+- Not a production implementation of 2PC-MPC — the upstream project ([Ika Network](https://ika.xyz/)) is.
+- Not a Canton smart-contract framework — the Daml templates here exist only to carry MPC messages.
 
-## Comparison with Alternatives
+## Acknowledgements
 
-| Feature | Canton 2PC-MPC | Traditional Bridges | Wrapped Tokens |
-|---------|---------------|---------------------|----------------|
-| **Native Assets** | ✅ Yes | ❌ No | ❌ No |
-| **Custody** | Decentralized | Centralized | Varies |
-| **Trust Assumptions** | Cryptographic | Operational | Varies |
-| **Smart Contract Control** | ✅ Full | Limited | ✅ Yes |
-| **Single Point of Failure** | ❌ None | ✅ Yes | Varies |
-
-## Inspired By
-
-This project is inspired by [Ika](https://ika.xyz/), the fastest parallel MPC network on Sui, which pioneered the 2PC-MPC approach for cross-chain asset control.
-
-## License
-
-Apache-2.0
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines and submit pull requests.
-
-## Acknowledgments
-
-- [Ika Network](https://ika.xyz/) for the 2PC-MPC protocol design
-- [Canton Network](https://www.canton.network/) for the enterprise blockchain infrastructure
-- [Digital Asset](https://www.digitalasset.com/) for Daml and Canton
-- [FROST](https://eprint.iacr.org/2020/852) for threshold signature research
+- [dWallet Labs](https://dwalletlabs.com) — 2PC-MPC protocol + [inkrypto](https://github.com/dwallet-labs/inkrypto)
+- [Ika Network](https://ika.xyz) — reference implementation
+- [Canton Network](https://www.canton.network) / [Digital Asset](https://www.digitalasset.com) — ledger platform
