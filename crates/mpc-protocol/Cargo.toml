@@ -3,30 +3,59 @@ name = "mpc-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "2PC-MPC protocol implementation for threshold signatures"
+description = "Phase 0: thin wrapper over dwallet-labs/inkrypto 2PC-MPC for research use"
 
 [dependencies]
-crypto-core = { path = "../crypto-core" }
+# inkrypto stack — feature-gated test_helpers get us setup_class_groups_secp256k1
+# and class_groups::test_helpers::deal_trusted_shares, plus the mpc driver helpers
+# we need for the in-process ceremony. `benchmarking` implies `test_helpers`.
+twopc_mpc = { workspace = true, features = ["test_helpers"] }
+class_groups = { workspace = true, features = ["threshold", "test_helpers", "randomized_decryption"] }
+mpc = { workspace = true, features = ["test_helpers"] }
+group = { workspace = true, features = ["os_rng"] }
+commitment = { workspace = true }
+homomorphic_encryption = { workspace = true }
 
-# Async
-tokio.workspace = true
-async-trait.workspace = true
-futures.workspace = true
+crypto-bigint = { workspace = true }
+bcs = "0.1"
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
 
-# Serialization
-serde.workspace = true
-serde_json.workspace = true
-hex = "0.4"
-bs58.workspace = true
-
-# Randomness
-rand.workspace = true
-
-# Error handling
-thiserror.workspace = true
-
-# Logging
-tracing.workspace = true
+# These pre-release deps aren't used directly here, but pulling them into the
+# workspace resolution graph via an explicit (even if unused) dep forces Cargo
+# to respect the `=` version pins from the workspace and prevents a silent
+# upgrade to an incompatible pre-release.
+curve25519-dalek = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+rand_chacha = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+digest = { workspace = true }
+block-buffer = { workspace = true }
+crypto-common = { workspace = true }
+hybrid-array = { workspace = true }
+k256 = { workspace = true }
+ecdsa = { workspace = true }
+der = { workspace = true }
+elliptic-curve = { workspace = true }
+ff = { workspace = true }
+hmac = { workspace = true }
+keccak = { workspace = true }
+pkcs8 = { workspace = true }
+primefield = { workspace = true }
+primeorder = { workspace = true }
+sec1 = { workspace = true }
+signature = { workspace = true }
+spki = { workspace = true }
+crypto-primes = { workspace = true }
+hash2curve = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
+k256 = { workspace = true, features = ["ecdsa", "arithmetic"] }
+ecdsa = { workspace = true }
+sha2 = { workspace = true }
+tracing-subscriber = { workspace = true }
+hex = { workspace = true }
+bcs = "0.1"
