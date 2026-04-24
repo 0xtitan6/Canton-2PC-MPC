@@ -1,9 +1,0 @@
-(function() {
-    const implementors = Object.fromEntries([["bech32",[["impl&lt;'b&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/iter/traits/double_ended/trait.DoubleEndedIterator.html\" title=\"trait core::iter::traits::double_ended::DoubleEndedIterator\">DoubleEndedIterator</a> for <a class=\"struct\" href=\"bech32/primitives/hrp/struct.ByteIter.html\" title=\"struct bech32::primitives::hrp::ByteIter\">ByteIter</a>&lt;'b&gt;",0],["impl&lt;'b&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/iter/traits/double_ended/trait.DoubleEndedIterator.html\" title=\"trait core::iter::traits::double_ended::DoubleEndedIterator\">DoubleEndedIterator</a> for <a class=\"struct\" href=\"bech32/primitives/hrp/struct.CharIter.html\" title=\"struct bech32::primitives::hrp::CharIter\">CharIter</a>&lt;'b&gt;",0],["impl&lt;'b&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/iter/traits/double_ended/trait.DoubleEndedIterator.html\" title=\"trait core::iter::traits::double_ended::DoubleEndedIterator\">DoubleEndedIterator</a> for <a class=\"struct\" href=\"bech32/primitives/hrp/struct.LowercaseByteIter.html\" title=\"struct bech32::primitives::hrp::LowercaseByteIter\">LowercaseByteIter</a>&lt;'b&gt;",0],["impl&lt;'b&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.1/core/iter/traits/double_ended/trait.DoubleEndedIterator.html\" title=\"trait core::iter::traits::double_ended::DoubleEndedIterator\">DoubleEndedIterator</a> for <a class=\"struct\" href=\"bech32/primitives/hrp/struct.LowercaseCharIter.html\" title=\"struct bech32::primitives::hrp::LowercaseCharIter\">LowercaseCharIter</a>&lt;'b&gt;",0]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":59,"fragment_lengths":[1614]}
